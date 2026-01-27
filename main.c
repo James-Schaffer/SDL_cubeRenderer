@@ -1,14 +1,17 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <SDL3/SDL.h>
+#include "window.h"
 
 #define SDL_MAIN_HANDLED
-#include <SDL3/SDL.h>
 
-#include "window.h"
+const double PI = 3.1415926535897932384;
+#define DEG2RAD(x) ((x) * (PI / 180.0))
 
 #define SDL_WINDOW_WIDTH	740U
 #define SDL_WINDOW_HEIGHT	740U
 
-#define CAM_FOV				90.0
+#define CAM_FOV				(PI/2)
 #define CAM_CLIP_MIN		0.5
 //#define CAM_CLIP_MAX		500 // not relevent for this kind of renderer
 
@@ -18,6 +21,10 @@ bool spaceDown = false;
 bool xDown = false;
 bool yDown = false;
 bool zDown = false;
+bool sDown = false;
+bool dDown = false;
+
+bool spinToggle = false;
 
 typedef struct v3 {
 	double x;
@@ -53,9 +60,6 @@ typedef struct {
 	double fov_scale;
 } CamProjectionInfo;
 
-const double PI = 3.1415926535897932384; // WI?? (why but pi as a joke) (I don't need pi) (so like, why pi, that's the joke) (why you still reading)
-#define DEG2RAD(x) ((x) * (PI / 180.0))
-
 const int CUBE_POINTS = 8;
 const v3 CUBE_POINT_VECTORS[] = {
 	{1,1,1},
@@ -90,10 +94,10 @@ const v2i CUBE_EDGE_INDEXS[] = {
 // y -front/back+
 // z -up/down+
 
-Transform cube = {{300,0,300}, {0,0,0}, {100,100,100}};
+Transform cube = {{0,0,0}, {0,0,0}, {1,1,1}};
 
 // For cam take it as pos, rotation, normal
-CamState cam = {{0, -300, 0}, {0,1,0}, {0,0,1}};
+CamState cam = {{0, -3, 0}, {0,1,0}, {0,0,1}};
 
 int currentAxis = 0;
 
@@ -105,48 +109,48 @@ double clampd(double d, double min, double max) {
 	const double t = d < min ? min : d;
 	return t > max ? max : t;
 }
-v3 v3Scale(const v3* a, double s) {
+v3 v3Scale(const v3 a, double s) {
 	v3 r;
-	r.x = a->x * s;
-	r.y = a->y * s;
-	r.z = a->z * s;
+	r.x = a.x * s;
+	r.y = a.y * s;
+	r.z = a.z * s;
 	return r;
 }
-v3 v3Add(const v3* a, const v3* b) {
+v3 v3Add(const v3 a, const v3 b) {
 	v3 r;
-	r.x = a->x + b->x;
-	r.y = a->y + b->y;
-	r.z = a->z + b->z;
+	r.x = a.x + b.x;
+	r.y = a.y + b.y;
+	r.z = a.z + b.z;
 	return r;
 }
-v3 v3Sub(const v3* a, const v3* b) {
+v3 v3Sub(const v3 a, const v3 b) {
 	v3 r;
-	r.x = a->x - b->x;
-	r.y = a->y - b->y;
-	r.z = a->z - b->z;
+	r.x = a.x - b.x;
+	r.y = a.y - b.y;
+	r.z = a.z - b.z;
 	return r;
 }
-double dotProduct(const v3* a, const v3* b) {
-	return a->x * b->x + a->y * b->y + a->z * b->z;
+double dotProduct(const v3 a, const v3 b) {
+	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
-v3 crossProduct(const v3* a, const v3* b) {
+v3 crossProduct(const v3 a, const v3 b) {
 	v3 r;
-	r.x = a->y*b->z - a->z*b->y;
-	r.y = a->z*b->x - a->x*b->z;
-	r.z = a->x*b->y - a->y*b->x;
+	r.x = a.y*b.z - a.z*b.y;
+	r.y = a.z*b.x - a.x*b.z;
+	r.z = a.x*b.y - a.y*b.x;
 	return r;
 }
-double v3Len(const v3* a) {
+double v3Len(const v3 a) {
 	return sqrt(dotProduct(a, a));
 }
-v3 normalize(const v3* v) {
+v3 normalize(const v3 v) {
 	double len = v3Len(v);
-	if (len == 0.0) return *v;
+	if (len == 0.0) return v;
 	return v3Scale(v, 1.0 / len);
 }
 
 v3 transformV3(const v3* v, const Transform* t) {
-	v3 ret = (*v);
+	v3 ret = *v;
 
 	// Scale
 	ret.x *= t->scale.x;// + t->position.x;
@@ -166,7 +170,7 @@ v3 transformV3(const v3* v, const Transform* t) {
 	double sz = sin(t->rotation.z);
 
 	ret.x = (x*(cy*cz)) + (y*((sx*sy*cz)-(cx*sz))) + (z*((cx*sy*cz)+(sx*sz)));
-	ret.y = (x*(cy*sz)) + (y*((sx*sy*sz)+(cx*cz))) + (z*((cx*sy*sz)+(sx*cz)));
+	ret.y = (x*(cy*sz)) + (y*((sx*sy*sz)+(cx*cz))) + (z*((cx*sy*sz)-(sx*cz)));
 	ret.z = (x*(-sy)) + (y*(sx*cy)) + (z*(cx*cy));
 
 	// ret.x = ((*v).x*(cos(r.y)*cos(r.z))) + ((*v).y*((sin(r.x)*cos(r.y)*cos(r.z))-(cos(r.x)*sin(r.z)))) + ((*v).z*((cos(r.x)*sin(r.y)*cos(r.z))+(sin(r.x)*sin(r.z))));
@@ -200,48 +204,51 @@ CamProjectionInfo getCamProjectionInfo(const CamState* camera) {
 	CamProjectionInfo ret;
 
 	ret.position = camera->position;
-	ret.normalV = camera->normal;
-	ret.upV = camera->up;
+	ret.normalV = normalize(camera->normal);
+	ret.upV = normalize(camera->up);
 
 	// Projection plane
-	const v3 scaledNormal = v3Scale(&camera->normal, CAM_CLIP_MIN);
-	const v3 planePoint = v3Add(&camera->position, &scaledNormal);
+	const v3 scaledNormal = v3Scale(camera->normal, CAM_CLIP_MIN);
+	const v3 planePoint = v3Add(camera->position, scaledNormal);
 
 	ret.planePosition = planePoint;
 
 	// Right vector
-	const v3 rightV = crossProduct(&camera->up, &camera->normal);
-	ret.rightV = normalize(&rightV);
+	ret.rightV = normalize(crossProduct(camera->up, camera->normal));
 
 	// fov scale
-	ret.fov_scale = SDL_WINDOW_WIDTH / (2 * tan(DEG2RAD(CAM_FOV) / 2));
+	ret.fov_scale = SDL_WINDOW_WIDTH / (2 * tan(CAM_FOV / 2));
 
 	return ret;
 }
 
-int project3DtoScreen(const v3* point, const CamProjectionInfo* camState, v2* outV) {
+int project3DtoScreen(const v3 point, const CamProjectionInfo* camState, v2* outV) {
 	// Ray
-	const v3 ray = v3Sub(point, &camState->position);
+	const v3 ray = normalize(v3Sub(point, camState->position));
 
-	double denom = dotProduct(&camState->normalV, &ray);
-	if (fabs(denom) < 1e-6) return 0; // parallel to plane
+	// given t = (a-p0).n / v.n (a=planeCenter , p0=camPos, n=normal, v=rayVector(normalized))
 
-	const v3 s = v3Sub(&camState->planePosition, &camState->position);
-	const double t = dotProduct(&camState->normalV, &s) / denom;
-	if (t <= 0.0)
-		return 0; // Behind camera
+	const double vn = dotProduct(ray, camState->normalV);
+	if (fabs(vn) < 1e-6) return 0; // parallel to plane (fabs = float absolute value)
 
-	const v3 scaledRay = v3Scale(&ray, t);
-	v3 hit = v3Add(&camState->position, &scaledRay);
+	const double t = dotProduct(v3Sub(camState->planePosition, camState->position), camState->normalV) / vn;
+	if (t <= 0.0) return 0; // Behind camera
 
-	v3 hit_planeSpace = v3Sub(&hit, &camState->planePosition);
+	// Find intersection point
+	v3 hit = v3Add(camState->position, v3Scale(ray, t));
 
-	double x = dotProduct(&hit_planeSpace, &camState->rightV);
-	double y = dotProduct(&hit_planeSpace, &camState->upV);
+	// Find local intersection point (relative to plane center)
+	const v3 hit_planeSpace = v3Sub(hit, camState->planePosition);
+
+	// Find x y coords on plane for intersection (0,0 center and + axis is up and right)
+	double x = dotProduct(hit_planeSpace, camState->rightV);
+	double y = dotProduct(hit_planeSpace, camState->upV);
 
 	x *= camState->fov_scale;
 	y *= camState->fov_scale;
 
+	// the dot product gives x and y where 0 is center of screen so :
+	// re-map 0,0 to top left and + axis to right down
 	outV->x = x + SDL_WINDOW_WIDTH / 2;
 	outV->y = y + SDL_WINDOW_HEIGHT / 2;
 
@@ -257,7 +264,7 @@ v2* projectPoints3DtoScreen(const v3* v, const int n, const CamState* camState) 
 	for (int i=0; i<n; ++i) {
 		v2 projectionPoint;
 
-		int out = project3DtoScreen(&v[i], &camInfo, &projectionPoint);
+		int out = project3DtoScreen(v[i], &camInfo, &projectionPoint);
 
 		if (out==1) points[i] = projectionPoint;
 		else {
@@ -281,6 +288,7 @@ void manageKeyDownEvent(const SDL_KeyboardEvent *e) {
 			break;
 		case SDLK_SPACE:
 			if (spaceDown) break;
+			spinToggle = !spinToggle;
 			spaceDown=true;
 			break;
 		case SDLK_X:
@@ -294,6 +302,14 @@ void manageKeyDownEvent(const SDL_KeyboardEvent *e) {
 		case SDLK_Z:
 			if (zDown) break;
 			zDown=true;
+			break;
+		case SDLK_S:
+			if (sDown) break;
+			sDown=true;
+			break;
+		case SDLK_D:
+			if (dDown) break;
+			dDown=true;
 			break;
 		default:
 			//printf("KeyDown\n");
@@ -319,6 +335,14 @@ void manageKeyUpEvent(const SDL_KeyboardEvent *e) {
 			if (!zDown) break;
 			zDown=false;
 			break;
+		case SDLK_S:
+			if (!sDown) break;
+			sDown=false;
+			break;
+		case SDLK_D:
+			if (!dDown) break;
+			dDown=false;
+			break;
 		default:
 			//printf("KeyUp\n");
 			break;
@@ -326,6 +350,12 @@ void manageKeyUpEvent(const SDL_KeyboardEvent *e) {
 }
 
 void update(double delta) {
+	if (spinToggle) {
+		cube.rotation.x += PI * 0.4 * delta;
+		cube.rotation.y += PI * 0.3 * delta;
+		cube.rotation.z += PI * 0.5 * delta;
+	}
+
 	if (xDown) {
 		cube.rotation.x += PI * 0.4 * delta;
 	}
@@ -335,7 +365,33 @@ void update(double delta) {
 	if (zDown) {
 		cube.rotation.z += PI * 0.4 * delta;
 	}
+
+	if (sDown) {
+		cube.scale.x += 0.1 * delta;
+		cube.scale.y += 0.1 * delta;
+		cube.scale.z += 0.1 * delta;
+	}
+	if (dDown) {
+		cube.scale.x -= 0.1 * delta;
+		cube.scale.y -= 0.1 * delta;
+		cube.scale.z -= 0.1 * delta;
+	}
 }
+
+
+// 6 faces, each with 4 vertices
+const int CUBE_FACES[6][4] = {
+	{2, 3, 6, 7}, // front
+	{0, 1, 4, 5}, // back
+	{1, 3, 5, 7}, // top
+	{0, 2, 4, 6}, // bottom
+	{0, 1, 2, 3}, // right
+	{4, 5, 6, 7}  // left
+};
+
+SDL_FColor colorf[8];
+
+
 
 void render(SDL_Renderer* renderer) {
 	// Clear screen
@@ -344,24 +400,85 @@ void render(SDL_Renderer* renderer) {
 
 	// Render Points
 	v3* points = getCubePoints(&cube);
-
 	v2* projectedPoints = projectPoints3DtoScreen(points, CUBE_POINTS, &cam);
+
+
+	v2* newPoints = malloc(sizeof(struct v2) * 8);
+
+	// for (int i=0; i<8; ++i) {
+	// 	newPoints[i].x = (1- points[i].x) * 60  + (SDL_WINDOW_WIDTH / 2);
+	// 	newPoints[i].y = (1- points[i].y) * 60  + (SDL_WINDOW_HEIGHT / 2);
+	// }
+
+	for (int i=0; i<8; ++i) {
+		newPoints[i] = projectedPoints[i];
+	}
+
+
+
+
+	// ---- Render filled faces ----
+	for (int f = 0; f < 6; f++) {
+
+		// Random color per face (per frame)
+		v3 color = {
+			rand() % 256,
+			rand() % 256,
+			rand() % 256,
+		};
+
+
+
+
+		SDL_Vertex verts[6];
+
+		int i0 = CUBE_FACES[f][0];
+		int i1 = CUBE_FACES[f][1];
+		int i2 = CUBE_FACES[f][2];
+		int i3 = CUBE_FACES[f][3];
+
+		// Triangle 1 (0,1,2)
+		verts[0] = (SDL_Vertex){ {newPoints[i0].x, newPoints[i0].y}, colorf[f], {0,0} };
+		verts[1] = (SDL_Vertex){ {newPoints[i1].x, newPoints[i1].y}, colorf[f], {0,0} };
+		verts[2] = (SDL_Vertex){ {newPoints[i2].x, newPoints[i2].y}, colorf[f], {0,0} };
+
+		// Triangle 2 (2,1,3)
+		verts[3] = (SDL_Vertex){ {newPoints[i2].x, newPoints[i2].y}, colorf[f], {0,0} };
+		verts[4] = (SDL_Vertex){ {newPoints[i1].x, newPoints[i1].y}, colorf[f], {0,0} };
+		verts[5] = (SDL_Vertex){ {newPoints[i3].x, newPoints[i3].y}, colorf[f], {0,0} };
+
+		SDL_RenderGeometry(renderer, NULL, verts, 6, NULL, 0);
+	}
+
+	SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+	for (int i=0; i < CUBE_EDGES; i++) {
+		double x1 = newPoints[CUBE_EDGE_INDEXS[i].x].x;
+		double y1 = newPoints[CUBE_EDGE_INDEXS[i].x].y;
+		double x2 = newPoints[CUBE_EDGE_INDEXS[i].y].x;
+		double y2 = newPoints[CUBE_EDGE_INDEXS[i].y].y;;
+
+		SDL_RenderLine(renderer,
+			x1, y1, x2, y2
+		);
+	}
 
 	free(points);
 
 	// Render edges
-	SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-	for (int i=0; i < CUBE_EDGES; i++) {
-		SDL_RenderLine(renderer,
-			projectedPoints[CUBE_EDGE_INDEXS[i].x].x, projectedPoints[CUBE_EDGE_INDEXS[i].x].y,
-			projectedPoints[CUBE_EDGE_INDEXS[i].y].x, projectedPoints[CUBE_EDGE_INDEXS[i].y].y
-		);
-	}
+	// SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+	// for (int i=0; i < CUBE_EDGES; i++) {
+	// 	SDL_RenderLine(renderer,
+	// 		projectedPoints[CUBE_EDGE_INDEXS[i].x].x, projectedPoints[CUBE_EDGE_INDEXS[i].x].y,
+	// 		projectedPoints[CUBE_EDGE_INDEXS[i].y].x, projectedPoints[CUBE_EDGE_INDEXS[i].y].y
+	// 	);
+	// }
 
+	/*
 	SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 	for (int i=0; i < CUBE_POINTS; i++) {
 		SDL_RenderPoint(renderer, projectedPoints[i].x, projectedPoints[i].y);
 	}
+	*/
 
 	/*
 	// Render edges
@@ -409,6 +526,17 @@ int main(void) {
 	Uint64 frames = 0;
 
 	SDL_Event e;
+
+
+	for (int i=0; i<8; i++) {
+		colorf[i] = (SDL_FColor) {
+			(float)(rand() % 256) / 255.0f,
+			(float)(rand() % 256) / 255.0f,
+			(float)(rand() % 256) / 255.0f,
+			1.0f
+		};
+	}
+
 
 	while (gameRunning) {
 		// Update deltaTime
