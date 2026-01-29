@@ -1,4 +1,4 @@
-// FILE INFOMATION HERE
+// Window manager
 // Created by James Schaffer on 21/01/2026.
 
 #ifndef SDL_DEMO_WINDOW_H

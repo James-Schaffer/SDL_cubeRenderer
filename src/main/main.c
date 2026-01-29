@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <SDL3/SDL.h>
+
+#include "vector.h"
 #include "window.h"
 
 #define SDL_MAIN_HANDLED
@@ -31,26 +33,6 @@ const double PI = 3.1415926535897932384;
 
 // ========== STRUCTS ==========
 
-typedef struct v3 {
-	double x;
-	double y;
-	double z;
-} v3;
-
-typedef struct v2 {
-	double x;
-	double y;
-} v2;
-typedef struct v2i {
-	int x;
-	int y;
-} v2i;
-
-typedef struct  {
-	v3 position;
-	v3 rotation; // r p y
-	v3 scale;
-} Transform;
 typedef struct  {
 	v3 position;
 	v3 rotation;
@@ -151,99 +133,8 @@ Transform cube_wallL = {{-5,50,0}, {0,0,0}, {0.1,50,5}};
 
 CamState cam = {{0, -2, 0}, {0,0,0}, {0,1,0}, {0,0,1}};
 
-// ========== VECTOR FUNCTIONS ==========
 
-int clampi(int d, int min, int max) {
-	const int t = d < min ? min : d;
-	return t > max ? max : t;
-}
-double clampd(double d, double min, double max) {
-	const double t = d < min ? min : d;
-	return t > max ? max : t;
-}
-v3 v3Scale(const v3 a, double s) {
-	v3 r;
-	r.x = a.x * s;
-	r.y = a.y * s;
-	r.z = a.z * s;
-	return r;
-}
-v3 v3Add(const v3 a, const v3 b) {
-	v3 r;
-	r.x = a.x + b.x;
-	r.y = a.y + b.y;
-	r.z = a.z + b.z;
-	return r;
-}
-v3 v3Sub(const v3 a, const v3 b) {
-	v3 r;
-	r.x = a.x - b.x;
-	r.y = a.y - b.y;
-	r.z = a.z - b.z;
-	return r;
-}
-double dotProduct(const v3 a, const v3 b) {
-	return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-v3 crossProduct(const v3 a, const v3 b) {
-	v3 r;
-	r.x = a.y*b.z - a.z*b.y;
-	r.y = a.z*b.x - a.x*b.z;
-	r.z = a.x*b.y - a.y*b.x;
-	return r;
-}
-double v3Len(const v3 a) {
-	return sqrt(dotProduct(a, a));
-}
-v3 normalize(const v3 v) {
-	double len = v3Len(v);
-	if (len == 0.0) return v;
-	return v3Scale(v, 1.0 / len);
-}
-
-v2 scalev2(const v2 a, const double s) {
-	v2 r;
-	r.x = a.x * s;
-	r.y = a.y * s;
-	return r;
-}
-v2 normalizev2(const v2 v) {
-	double len = sqrt( (v.x*v.x) + (v.y*v.y) );
-	if (len == 0.0) return v;
-	return scalev2(v, 1.0 / len);
-}
-
-v3 transformV3(const v3* v, const Transform* t) {
-	v3 ret = *v;
-
-	// Scale
-	ret.x *= t->scale.x;// + t->position.x;
-	ret.y *= t->scale.y;// = (ret.y * t->scale.y) + t->position.y;
-	ret.z *= t->scale.z;//= (ret.z * t->scale.z) + t->position.z;
-
-	// Rotate
-	double x = ret.x;
-	double y = ret.y;
-	double z = ret.z;
-
-	double cx = cos(t->rotation.x);
-	double sx = sin(t->rotation.x);
-	double cy = cos(t->rotation.y);
-	double sy = sin(t->rotation.y);
-	double cz = cos(t->rotation.z);
-	double sz = sin(t->rotation.z);
-
-	ret.x = (x*(cy*cz)) + (y*((sx*sy*cz)-(cx*sz))) + (z*((cx*sy*cz)+(sx*sz)));
-	ret.y = (x*(cy*sz)) + (y*((sx*sy*sz)+(cx*cz))) + (z*((cx*sy*sz)-(sx*cz)));
-	ret.z = (x*(-sy)) + (y*(sx*cy)) + (z*(cx*cy));
-
-	// Transform position
-	ret.x += t->position.x;
-	ret.y += t->position.y;
-	ret.z += t->position.z;
-
-	return ret;
-}
+// Old function to get points in a cube
 
 // Leaks memory, make sure to delete later :D
 v3* getCubePoints(const Transform* t) {
@@ -663,6 +554,8 @@ int main(void) {
 		};
 	}
 
+	//Mesh* tmp = loadMeshFromOBJ("cube.obj");
+	//free(tmp);
 
 	while (gameRunning) {
 		// Update deltaTime
