@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <SDL3/SDL.h>
 
+#include "mesh.h"
 #include "vector.h"
 #include "window.h"
 
@@ -9,17 +10,19 @@
 
 // WRITEN BY JAMES SCHAFFER 2026
 //
-// SIMPLE CUBE RENDERER, C & SDL
+// SIMPLE SOFTWARE RENDERER, C & SDL
 //
 // Note world axis :
 //
 // x -left/right+
-// y -front/back+
-// z -up/down+
+// y -down/up+
+// z -back/front+
 
 // ========== DEFINITIONS ==========
 
 const double PI = 3.1415926535897932384;
+const double PI_2 = 1.5707963267948966192;
+
 #define DEG2RAD(x) ((x) * (PI / 180.0))
 
 #define SDL_WINDOW_WIDTH	1920U
@@ -74,78 +77,14 @@ bool dDown = false;
 bool eDown = false;
 bool qDown = false;
 
-
-
-// ######################OLD TO REMOVE WHEN CHANGED###############################################
-
-// ========== OLD MESH DATA ==========
-
-const int CUBE_POINTS = 8;
-const v3 CUBE_POINT_VECTORS[] = {
-	{1,1,1},
-	{1,1,-1},
-	{1,-1,1},
-	{1,-1,-1},
-	{-1,1,1},
-	{-1,1,-1},
-	{-1,-1,1},
-	{-1,-1,-1}
-};
-const int CUBE_EDGES = 12;
-const v2i CUBE_EDGE_INDEXS[] = {
-	// Top
-	{0,1},
-	{1,3},
-	{3,2},
-	{2,0},
-	// Down
-	{0,4},
-	{1,5},
-	{2,6},
-	{3,7},
-	// Bottom
-	{4,5},
-	{5,7},
-	{7,6},
-	{6,4}
-};
-// 6 faces, each with 4 vertices
-const int CUBE_FACES[6][4] = {
-	{2, 3, 6, 7}, // front
-	{0, 1, 4, 5}, // back
-	{1, 3, 5, 7}, // top
-	{0, 2, 4, 6}, // bottom
-	{0, 1, 2, 3}, // right
-	{4, 5, 6, 7}  // left
-};
-
-// ========== OLD COLOR DATA ==========
-
-SDL_FColor colorf[8];
-
-// ========== OLD MESH INSTANCES ==========
-
-Transform cube = {{0,0,0}, {0,0,0}, {1,1,1}};
-Transform floorCube = {{0,50,5}, {0,0,0}, {5,50,0.1}};
-Transform cube_wallL = {{-5,50,0}, {0,0,0}, {0.1,50,5}};
-
 // ========== CAMERA TRANSFORM ==========
 
 CamState cam = {{0, -2, 0}, {0,0,0}, {0,1,0}, {0,0,1}};
 
+// Other
 
-// Old function to get points in a cube
-
-// Leaks memory, make sure to delete later :D
-v3* getCubePoints(const Transform* t) {
-	v3* points = malloc(sizeof(struct v3) * CUBE_POINTS);
-
-	for (int i=0; i < CUBE_POINTS; i++) {
-		points[i] = transformV3(&CUBE_POINT_VECTORS[i], t);
-	}
-
-	return points;
-}
+v3 sun = {0, 1, -1};
+Transform meshTrans = { {0,0,0}, {0,0,0}, {1,1,1}};
 
 // ========== SETUP CAM PROJECTION VARS FOR EACH FRAME ==========
 
@@ -215,10 +154,7 @@ int project3DtoScreen(const v3 point, const CamProjectionInfo* camState, v2* out
 
 // ========== Projects an array of points to the screen ==========
 
-// Leaks memory, make sure to delete later :D
-v2* projectPoints3DtoScreen(const v3* v, const int n, const CamState* camState) {
-	v2* points = malloc(sizeof(struct v2) * n);
-
+void projectPoints3DtoScreen(const v3* v, v2* projected, const int n, const CamState* camState) {
 	const CamProjectionInfo camInfo = getCamProjectionInfo(camState);
 
 	for (int i=0; i<n; ++i) {
@@ -226,33 +162,42 @@ v2* projectPoints3DtoScreen(const v3* v, const int n, const CamState* camState) 
 
 		int out = project3DtoScreen(v[i], &camInfo, &projectionPoint);
 
-		if (out==1) points[i] = projectionPoint;
+		if (out==1) projected[i] = projectionPoint;
 		else {
-			points[i].x = 0;
-			points[i].y = 0;
+			projected[i].x = 0;
+			projected[i].y = 0;
 		};
 	}
-
-	return points;
 }
 
 // ===== UPDATE LOOP =====
 
 void update(double delta) {
 	if (spinToggle) {
-		cube.rotation.x += PI * 0.4 * delta;
-		cube.rotation.y += PI * 0.3 * delta;
-		cube.rotation.z += PI * 0.5 * delta;
+		meshTrans.rotation.x += PI * 0.4 * delta;
+		meshTrans.rotation.y += PI * 0.3 * delta;
+		meshTrans.rotation.z += PI * 0.5 * delta;
 	}
 
 	if (xDown) {
-		cube.rotation.x += PI * 0.4 * delta;
+		meshTrans.rotation.x += PI * 0.4 * delta;
 	}
 	if (yDown) {
-		cube.rotation.y += PI * 0.4 * delta;
+		meshTrans.rotation.y += PI * 0.4 * delta;
 	}
 	if (zDown) {
-		cube.rotation.z += PI * 0.4 * delta;
+		meshTrans.rotation.z += PI * 0.4 * delta;
+	}
+
+	if (jDown) {
+		meshTrans.scale.x += 0.1 * delta;
+		meshTrans.scale.y += 0.1 * delta;
+		meshTrans.scale.z += 0.1 * delta;
+	}
+	if (kDown) {
+		meshTrans.scale.x -= 0.1 * delta;
+		meshTrans.scale.y -= 0.1 * delta;
+		meshTrans.scale.z -= 0.1 * delta;
 	}
 
 	// x,y plane
@@ -270,6 +215,7 @@ void update(double delta) {
 	if (dDown) {
 		moveDir.x -= 1;
 	}
+
 
 	moveDir = normalizev2(moveDir);
 
@@ -291,76 +237,65 @@ void update(double delta) {
 	if (eDown) {
 		cam.position.z += 2 * delta;
 	}
-
-	if (jDown) {
-		cube.scale.x += 0.1 * delta;
-		cube.scale.y += 0.1 * delta;
-		cube.scale.z += 0.1 * delta;
-	}
-	if (kDown) {
-		cube.scale.x -= 0.1 * delta;
-		cube.scale.y -= 0.1 * delta;
-		cube.scale.z -= 0.1 * delta;
-	}
 }
 
 // ===== RENDER FRAME =====
-
-void render(SDL_Renderer* renderer) {
+void render(SDL_Renderer* renderer, Mesh mesh) {
 	// Clear screen
 	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 	SDL_RenderClear(renderer);
 
-	const int N = 2;
-
-	// Mesh array
-	Transform* meshes[2] = {
-		&floorCube,
-		//&cube_wallL,
-		&cube
+	SDL_FColor colf = {
+		0, 0, 0, 1
 	};
 
-	// for each mesh
-	for (int i=0; i<N; ++i) {
-		v3* points = getCubePoints(meshes[i]);
-		v2* projectedPoints = projectPoints3DtoScreen(points, CUBE_POINTS, &cam);
+	v3 points[3];
+	v2 projectedPoints[3];
+	SDL_Vertex verts[3];
 
-		double centerDist = v3Len(v3Sub(meshes[i]->position, cam.position));
+	for (int i=0; i<mesh.faceCount; ++i) {
+		//v3 normal = mesh.normals[mesh.faces[i].n0];
 
-		// Render faces
-		for (int f = 0; f < 6; f++) {
-			SDL_Vertex verts[6];
+		v3 viewDir = normalize(v3Sub(mesh.vertices[mesh.faces[i].v0], cam.position));
 
-			int i0 = CUBE_FACES[f][0];
-			int i1 = CUBE_FACES[f][1];
-			int i2 = CUBE_FACES[f][2];
-			int i3 = CUBE_FACES[f][3];
-
-			// Find center of face (halfway between corners) length of average distance to corners from cam
-			double faceDist = v3Len(v3Scale(v3Add(
-				v3Sub(points[i1], cam.position),
-				v3Sub(points[i2], cam.position)
-				), 0.5));
-
-			if (faceDist > centerDist) continue;
-
-			// Triangle 1 (0,1,2)
-			verts[0] = (SDL_Vertex){ {projectedPoints[i0].x, projectedPoints[i0].y}, colorf[f], {0,0} };
-			verts[1] = (SDL_Vertex){ {projectedPoints[i1].x, projectedPoints[i1].y}, colorf[f], {0,0} };
-			verts[2] = (SDL_Vertex){ {projectedPoints[i2].x, projectedPoints[i2].y}, colorf[f], {0,0} };
-
-			// Triangle 2 (2,1,3)
-			verts[3] = (SDL_Vertex){ {projectedPoints[i2].x, projectedPoints[i2].y}, colorf[f], {0,0} };
-			verts[4] = (SDL_Vertex){ {projectedPoints[i1].x, projectedPoints[i1].y}, colorf[f], {0,0} };
-			verts[5] = (SDL_Vertex){ {projectedPoints[i3].x, projectedPoints[i3].y}, colorf[f], {0,0} };
-
-			SDL_RenderGeometry(renderer, NULL, verts, 6, NULL, 0);
+		if (dotProduct(mesh.normals[mesh.faces[i].n0], viewDir) > 0) {
+			continue; // Skip if facing away from cam
 		}
 
-		free(points);
-		free(projectedPoints);
-	}
+		// points[0] = transformV3(&mesh.vertices[mesh.faces[i].v0], &meshTrans);
+		// points[1] = transformV3(&mesh.vertices[mesh.faces[i].v1], &meshTrans);
+		// points[2] = transformV3(&mesh.vertices[mesh.faces[i].v2], &meshTrans);
 
+		points[0] = mesh.vertices[mesh.faces[i].v0];
+		points[1] = mesh.vertices[mesh.faces[i].v1];
+		points[2] = mesh.vertices[mesh.faces[i].v2];
+
+		// colf.r = (( (unsigned int)((i%255)*23.324234543) )%255)/255.0;
+		// colf.g = (( (unsigned int)((i%255)*14.932543) )%255)/255.0;
+		// colf.b = (( (unsigned int)((i%255)*3.24234) )%255)/255.0;
+
+		double intensity = dotProduct(mesh.normals[mesh.faces[i].n0], viewDir);
+
+		intensity *= -1;
+
+		if (intensity < 0.0)
+			intensity = 0.0;
+		if (intensity > 1.0)
+			intensity = 1.0;
+
+		colf.r = intensity;
+		colf.g = intensity;
+		colf.b = intensity;
+
+		projectPoints3DtoScreen(points, projectedPoints, 3, &cam);
+
+		// Triangle 1 (0,1,2)
+		verts[0] = (SDL_Vertex){ {projectedPoints[0].x, projectedPoints[0].y}, colf };
+		verts[1] = (SDL_Vertex){ {projectedPoints[1].x, projectedPoints[1].y}, colf };
+		verts[2] = (SDL_Vertex){ {projectedPoints[2].x, projectedPoints[2].y}, colf };
+
+		SDL_RenderGeometry(renderer, NULL, verts, 3, NULL, 0);
+	}
 	SDL_RenderPresent(renderer);
 }
 
@@ -506,10 +441,10 @@ void manageMouseMotion(const SDL_MouseMotionEvent *e) {
 	cam.rotation.z += deltaX;
 	cam.rotation.x += deltaY;
 
-	if (cam.rotation.x > PI/2) {
-		cam.rotation.x = PI/2;
-	} else if (cam.rotation.x < -PI/2) {
-		cam.rotation.x = -PI/2;
+	if (cam.rotation.x > PI_2) {
+		cam.rotation.x = PI_2;
+	} else if (cam.rotation.x < -PI_2) {
+		cam.rotation.x = -PI_2;
 	}
 }
 
@@ -544,18 +479,8 @@ int main(void) {
 
 	SDL_Event e;
 
-
-	for (int i=0; i<8; i++) {
-		colorf[i] = (SDL_FColor) {
-			(float)(rand() % 256) / 255.0f,
-			(float)(rand() % 256) / 255.0f,
-			(float)(rand() % 256) / 255.0f,
-			1.0f
-		};
-	}
-
-	//Mesh* tmp = loadMeshFromOBJ("cube.obj");
-	//free(tmp);
+	int meshCount;
+	Mesh* meshes = loadMeshFromOBJ("cat.obj", &meshCount);
 
 	while (gameRunning) {
 		// Update deltaTime
@@ -594,10 +519,12 @@ int main(void) {
 		}
 
 		update(deltaTime);
-		render(renderer);
+		render(renderer, meshes[0]);
 	}
 
 	// Cleanup
+	freeMesh(&meshes[0]);
+
 	SDL_DestroyRenderer(renderer);
 	destroyWindow(window);
 	SDL_Quit();

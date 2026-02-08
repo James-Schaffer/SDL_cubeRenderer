@@ -22,8 +22,8 @@ void destroyWindow(Window window) {
 
 void initWindow(Window window) {
 	window->window = SDL_CreateWindow(
-		"TEST_HELLO_WORLD",
+		"SimpleSoftwareRenderer",
 		window->width, window->height,
-		SDL_WINDOW_FULLSCREEN
+		SDL_WINDOW_RESIZABLE
 	);
 }

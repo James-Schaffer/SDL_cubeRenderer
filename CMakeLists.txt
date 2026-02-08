@@ -8,7 +8,7 @@ find_package(SDL3 CONFIG REQUIRED)
 
 add_executable(CubeRender src/main/main.c
         src/main/window.c
-        #src/main/mesh.c
+        src/main/mesh.c
         src/main/vector.c
 )
 
